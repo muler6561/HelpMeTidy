@@ -1,0 +1,5 @@
+*
+!requirements.txt
+!help_me_tidy/
+!help_me_tidy/**
+**/__pycache__
