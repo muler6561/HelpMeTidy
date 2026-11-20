@@ -1,0 +1,8 @@
+name: help-me-tidy
+services:
+  agent:
+    build: .
+    env_file: .env
+    volumes:
+      - ./data:/app/data:ro
+    init: true
