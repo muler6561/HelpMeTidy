@@ -1,259 +1,433 @@
 """
 schemas.py - Help Me Tidy（空間魔法師）資料模型與規格定義
-遵循 Pydantic v2 規範，整合 BACKEND_API.md 與 FRONTEND_API.md 之定義。
+嚴格遵循 BACKEND_API.md 與 FRONTEND_API.md 規範（Pydantic v2）。
 """
 
 from enum import Enum
 from typing import Any, Dict, Generic, List, Optional, TypeVar
 
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field, model_validator
+
 
 # ==============================================================================
-# 1. 全域錯誤模型與通用回應外殼 (ApiResponse Envelope)
+# 1. 列舉定義 (Enums) - 全部採用小寫 snake_case
 # ==============================================================================
 
 
-class ApiError(BaseModel):
-    """標準化 API 錯誤細節模型"""
+class RegionAvailability(str, Enum):
+    AVAILABLE = "available"
+    UNAVAILABLE = "unavailable"
+    UNKNOWN = "unknown"
 
-    code: str = Field(
-        ...,
-        description="機器可判讀之錯誤代碼，如 REVISION_CONFLICT, IDEMPOTENCY_CONFLICT 等",
-    )
-    message: str = Field(..., description="人類可讀之錯誤訊息")
-    details: Optional[Dict[str, Any]] = Field(
-        default=None, description="可選之附加錯誤資訊"
-    )
+
+class SpatialRelationType(str, Enum):
+    INSIDE = "inside"
+    ON = "on"
+    NEAR = "near"
+
+
+class RequirementKind(str, Enum):
+    HARD_CONSTRAINT = "hard_constraint"
+    PREFERENCE = "preference"
+    USAGE = "usage"
+
+
+class RequirementRule(str, Enum):
+    FORBIDDEN_REGION = "forbidden_region"
+    REQUIRED_REGION = "required_region"
+    KEEP_REGION_EMPTY = "keep_region_empty"
+    USAGE_FREQUENCY = "usage_frequency"
+    NOTE = "note"
+
+
+class FitStatus(str, Enum):
+    CONFIRMED = "confirmed"
+    UNKNOWN = "unknown"
+
+
+class StepStatus(str, Enum):
+    PENDING = "pending"
+    COMPLETED = "completed"
+
+
+class LocationSource(str, Enum):
+    STEP_COMPLETION = "step_completion"
+    USER_CONFIRMATION = "user_confirmation"
+
+
+class AgentStatus(str, Enum):
+    NEEDS_INPUT = "needs_input"
+    PLAN_READY = "plan_ready"
+    ANSWERED = "answered"
+    FAILED = "failed"
+
+
+class MessageRole(str, Enum):
+    USER = "user"
+    ASSISTANT = "assistant"
+
+
+# ==============================================================================
+# 2. 共用錯誤與內部工具回傳外殼 (Error & Tool Envelope)
+# ==============================================================================
+
+
+class Error(BaseModel):
+    """標準錯誤結構（不得包含金鑰、原始堆疊或模型隱藏推理）"""
+
+    code: str
+    message: str
+    retryable: bool
+    details: Dict[str, Any] = Field(default_factory=dict)
 
 
 T = TypeVar("T")
 
 
-class ApiResponse(BaseModel, Generic[T]):
-    """全域通用 API 回應包裝外殼 (Envelope)"""
+class ToolEnvelope(BaseModel, Generic[T]):
+    """Agent 工具與後端可信服務接口的統一回傳外殼"""
 
-    ok: bool = Field(default=True, description="請求是否成功")
-    data: Optional[T] = Field(
-        default=None, description="業務資料 payload，失敗時為 None"
-    )
-    error: Optional[ApiError] = Field(
-        default=None, description="錯誤結構，成功時為 None"
-    )
-    revision: int = Field(..., description="當前 Session 之版本編號")
-    request_id: Optional[str] = Field(default=None, description="請求去重追蹤識別碼")
+    ok: bool
+    data: Optional[T] = None
+    error: Optional[Error] = None
+    revision: Optional[int] = Field(default=None, ge=0)
 
-
-# ==============================================================================
-# 2. 狀態與列舉 (Enums)
-# ==============================================================================
-
-
-class Phase(str, Enum):
-    """Session 所處之整體生命週期階段"""
-
-    COLLECTING = "COLLECTING"  # 初始狀態：等待照片上傳
-    ANALYZING = "ANALYZING"  # 正在進行多模態場景分析
-    CONFIRMING_SCENE = "CONFIRMING_SCENE"  # 等待使用者確認物品與區域
-    PLANNING = "PLANNING"  # Agent 規劃整理計畫中
-    EXECUTING = "EXECUTING"  # 步驟執行中
-    COMPLETED = "COMPLETED"  # 所有步驟已完成
-
-
-class AgentStatus(str, Enum):
-    """Agent 回應時所代表之業務語意狀態"""
-
-    NEED_INFO = "NEED_INFO"  # 資訊不足，需向使用者提出反問
-    PLAN_READY = "PLAN_READY"  # 計畫已生成完畢
-    ANSWER = "ANSWER"  # 針對使用者問題的直接回答（如位置查詢）
-    FAILED = "FAILED"  # Agent 內部規劃失敗
-
-
-class StepStatus(str, Enum):
-    """整理步驟之執行狀態"""
-
-    PENDING = "PENDING"  # 待執行
-    DONE = "DONE"  # 已完成
-    BLOCKED = "BLOCKED"  # 被阻擋（如抽屜已滿）
-
-
-class RegionStatus(str, Enum):
-    """收納區域之狀態"""
-
-    AVAILABLE = "AVAILABLE"  # 可用
-    FULL = "FULL"  # 已滿
-    EXCLUDED = "EXCLUDED"  # 使用者排除禁用
+    @model_validator(mode="after")
+    def check_envelope_consistency(self) -> "ToolEnvelope[T]":
+        if self.ok and self.error is not None:
+            raise ValueError("ok 為 true 時，error 必須為 null")
+        if not self.ok:
+            if self.data is not None:
+                raise ValueError("ok 為 false 時，data 必須為 null")
+            if self.error is None:
+                raise ValueError("ok 為 false 時，error 不可為 null")
+        return self
 
 
 # ==============================================================================
-# 3. 核心領域模型 (Domain Models)
+# 3. 核心領域模型 (BACKEND_API.md 第 2 節)
 # ==============================================================================
+
+
+class ImageRef(BaseModel):
+    """已上傳且屬於該 session 的圖片引用（不含本機路徑或 base64）"""
+
+    image_id: str
+    mime_type: str
+    size_bytes: int = Field(..., ge=0)
+
+
+class Dimensions(BaseModel):
+    """空間尺寸（有值時必須嚴格大於 0）"""
+
+    width_cm: Optional[float] = Field(default=None, gt=0)
+    depth_cm: Optional[float] = Field(default=None, gt=0)
+    height_cm: Optional[float] = Field(default=None, gt=0)
 
 
 class Item(BaseModel):
-    """辨識出的待整理物品"""
-
-    item_id: str = Field(..., description="後端分配之唯一物品識別碼")
-    name: str = Field(..., description="物品名稱")
-    category: Optional[str] = Field(
-        default=None, description="物品類別，如文具、衣物"
-    )
-    image_id: Optional[str] = Field(default=None, description="關聯之原始圖片識別碼")
-    confidence: Optional[float] = Field(
-        default=None, ge=0.0, le=1.0, description="辨識信心度"
-    )
-    confirmed: bool = Field(default=False, description="使用者是否已確認此物品")
+    item_id: str
+    name: str
+    observed_region_id: Optional[str] = None
+    observation: str
+    needs_confirmation: bool
 
 
 class Region(BaseModel):
-    """收納或放置區域"""
+    region_id: str
+    name: str
+    availability: RegionAvailability
+    dimensions: Dimensions = Field(default_factory=Dimensions)
+    needs_confirmation: bool
 
-    region_id: str = Field(..., description="後端分配之唯一區域識別碼")
-    name: str = Field(..., description="區域名稱，如書架第一層、書桌右側抽屜")
-    status: RegionStatus = Field(
-        default=RegionStatus.AVAILABLE, description="區域狀態"
-    )
-    notes: Optional[str] = Field(default=None, description="使用者或 Agent 補充備註")
+
+class SpatialRelation(BaseModel):
+    """僅表達照片觀察，並非使用者確認位置"""
+
+    item_id: str
+    region_id: str
+    relation: SpatialRelationType
+
+
+class Question(BaseModel):
+    question_id: str
+    text: str
+    related_ids: List[str] = Field(default_factory=list)
+
+
+class SceneAnalysis(BaseModel):
+    image_ids: List[str]
+    items: List[Item]
+    regions: List[Region]
+    relations: List[SpatialRelation]
+    questions: List[Question]
+    confirmed: bool
+
+
+class Requirement(BaseModel):
+    requirement_id: str
+    kind: RequirementKind
+    rule: RequirementRule
+    item_ids: List[str] = Field(default_factory=list)
+    region_ids: List[str] = Field(default_factory=list)
+    value: Optional[str] = None
+    source_text: str
+
+    @model_validator(mode="after")
+    def check_requirement_rules(self) -> "Requirement":
+        if self.rule in (
+            RequirementRule.FORBIDDEN_REGION,
+            RequirementRule.REQUIRED_REGION,
+        ):
+            if not self.item_ids or not self.region_ids:
+                raise ValueError(f"{self.rule.value} 至少須指定一個 item 與一個 region")
+            if self.rule == RequirementRule.REQUIRED_REGION and len(self.region_ids) != 1:
+                raise ValueError("required_region 只允許指定一個目標 region")
+        elif self.rule == RequirementRule.KEEP_REGION_EMPTY:
+            if not self.region_ids:
+                raise ValueError("keep_region_empty 必須指定至少一個 region")
+            if self.item_ids:
+                raise ValueError("keep_region_empty 的 item_ids 必須為空")
+        elif self.rule == RequirementRule.USAGE_FREQUENCY:
+            if not self.item_ids:
+                raise ValueError("usage_frequency 必須指定至少一個 item")
+        return self
+
+
+class Requirements(BaseModel):
+    entries: List[Requirement] = Field(default_factory=list)
+    questions: List[Question] = Field(default_factory=list)
+
+
+class Assignment(BaseModel):
+    item_id: str
+    region_id: str
+    reason: str
+    fit_status: FitStatus
 
 
 class PlanStep(BaseModel):
-    """整理計畫中的單一執行步驟"""
+    step_id: str
+    instruction: str
+    item_ids: List[str] = Field(..., min_length=1)
+    target_region_id: str
+    status: StepStatus
+    completed_at: Optional[AwareDatetime] = None
 
-    step_id: str = Field(..., description="後端分配之唯一步驟識別碼")
-    order: int = Field(..., ge=1, description="執行序號，從 1 開始遞增")
-    item_id: str = Field(..., description="關聯之物品識別碼")
-    item_name: str = Field(..., description="物品名稱快照")
-    target_region_id: str = Field(..., description="目標放置區域識別碼")
-    target_region_name: str = Field(..., description="目標區域名稱快照")
-    instruction: str = Field(..., description="具體操作指引文字")
-    status: StepStatus = Field(default=StepStatus.PENDING, description="步驟當前狀態")
+    @model_validator(mode="after")
+    def check_completion_timestamp(self) -> "PlanStep":
+        if self.status == StepStatus.COMPLETED and self.completed_at is None:
+            raise ValueError("status 為 completed 時，completed_at 必須有值")
+        if self.status == StepStatus.PENDING and self.completed_at is not None:
+            raise ValueError("status 為 pending 時，completed_at 必須為 null")
+        return self
 
 
 class Plan(BaseModel):
-    """完整整理計畫"""
-
-    plan_id: str = Field(..., description="後端分配之唯一計畫識別碼")
-    created_at: str = Field(..., description="建立時間之 ISO 格式字串")
-    steps: List[PlanStep] = Field(default_factory=list, description="有序步驟列表")
-    summary: Optional[str] = Field(default=None, description="整理建議總結")
+    plan_id: str
+    plan_version: int = Field(..., ge=1)
+    based_on_revision: int = Field(..., ge=0)
+    change_reason: str
+    assignments: List[Assignment]
+    steps: List[PlanStep]
+    pending_confirmations: List[str] = Field(default_factory=list)
 
 
 class LocationRecord(BaseModel):
-    """物品確認放置歷史紀錄（不可隨重新規劃被洗掉）"""
+    item_id: str
+    region_id: str
+    confirmed_at: AwareDatetime
+    source: LocationSource
+    step_id: Optional[str] = None
 
-    record_id: str = Field(..., description="後端分配之位置紀錄識別碼")
-    item_id: str = Field(..., description="物品識別碼")
-    item_name: str = Field(..., description="物品名稱")
-    region_id: str = Field(..., description="最終放置區域識別碼")
-    region_name: str = Field(..., description="區域名稱")
-    confirmed_at: str = Field(..., description="確認完成時間之 ISO 格式字串")
-    source_step_id: Optional[str] = Field(
-        default=None, description="觸發此確認的步驟 ID（若由步驟完成觸發）"
-    )
-
-
-class ImageMetadata(BaseModel):
-    """已上傳照片之詮釋資料"""
-
-    image_id: str = Field(..., description="圖片唯一識別碼")
-    filename: str = Field(..., description="原始檔案名稱")
-    uploaded_at: str = Field(..., description="上傳時間")
-    size_bytes: int = Field(..., description="檔案大小位元組")
+    @model_validator(mode="after")
+    def check_source_step_id(self) -> "LocationRecord":
+        if self.source == LocationSource.USER_CONFIRMATION and self.step_id is not None:
+            raise ValueError("直接確認位置 (user_confirmation) 時，step_id 必須為 null")
+        if self.source == LocationSource.STEP_COMPLETION and not self.step_id:
+            raise ValueError("步驟完成確認 (step_completion) 時，step_id 不可為空")
+        return self
 
 
-class SessionState(BaseModel):
-    """單一整理會話之完整狀態聚合模型"""
-
-    session_id: str = Field(..., description="會話識別碼")
-    phase: Phase = Field(default=Phase.COLLECTING, description="當前會話階段")
-    revision: int = Field(default=0, ge=0, description="樂觀鎖版本控制號")
-    images: List[ImageMetadata] = Field(
-        default_factory=list, description="上傳之照片清單"
-    )
-    items: List[Item] = Field(
-        default_factory=list, description="識別與確認後之物品清單"
-    )
-    regions: List[Region] = Field(
-        default_factory=list, description="可用與配置之收納區域清單"
-    )
-    active_plan: Optional[Plan] = Field(
-        default=None, description="目前生效中之整理計畫"
-    )
-    locations: List[LocationRecord] = Field(
-        default_factory=list, description="不可變之物品確認位置歷史紀錄"
-    )
-    requirements: Dict[str, Any] = Field(
-        default_factory=dict, description="使用者整理偏好與額外限制"
-    )
-
-
-# ==============================================================================
-# 4. API 請求資料模型 (Request DTOs)
-# ==============================================================================
-
-
-class CreateSessionRequest(BaseModel):
-    """POST /sessions 建立會話請求"""
-
-    user_notes: Optional[str] = Field(default=None, description="使用者初始補充需求說明")
-
-
-class SceneConfirmationRequest(BaseModel):
-    """PUT /sessions/{sid}/scene/confirmation 使用者確認場景請求"""
-
-    items: List[Item] = Field(..., description="使用者編輯確認後的物品清單")
-    regions: List[Region] = Field(..., description="使用者編輯確認後的區域清單")
-    expected_revision: int = Field(..., description="前端當前持有的版本號")
-    request_id: str = Field(..., description="請求去重追蹤碼")
-
-
-class PlanCreationRequest(BaseModel):
-    """POST /sessions/{sid}/plans 請求生成整理計畫"""
-
-    requirements: Optional[Dict[str, Any]] = Field(
-        default=None, description="整理偏好與硬限制"
-    )
-    expected_revision: int = Field(..., description="前端當前持有的版本號")
-    request_id: str = Field(..., description="請求去重追蹤碼")
-
-
-class StepCompletionRequest(BaseModel):
-    """POST /sessions/{sid}/steps/{step_id}/completion 回報步驟完成"""
-
-    expected_revision: int = Field(..., description="前端當前持有的版本號")
-    request_id: str = Field(..., description="請求去重追蹤碼")
-
-
-class LocationConfirmationRequest(BaseModel):
-    """POST /sessions/{sid}/locations/confirmations 手動確認物品放置位置"""
-
-    item_id: str = Field(..., description="物品識別碼")
-    region_id: str = Field(..., description="放置區域識別碼")
-    expected_revision: int = Field(..., description="前端當前持有的版本號")
-    request_id: str = Field(..., description="請求去重追蹤碼")
-
-
-class SendMessageRequest(BaseModel):
-    """POST /sessions/{sid}/messages 對話互動請求"""
-
-    message: str = Field(..., min_length=1, description="使用者輸入訊息")
-    expected_revision: int = Field(..., description="前端當前持有的版本號")
-    request_id: str = Field(..., description="請求去重追蹤碼")
-
-
-# ==============================================================================
-# 5. Agent 互動回應資料模型 (Agent Result DTOs)
-# ==============================================================================
+class Message(BaseModel):
+    message_id: str
+    role: MessageRole
+    text: str
+    created_at: AwareDatetime
+    request_id: str
 
 
 class AgentResult(BaseModel):
-    """Agent 推理完成後回傳給後端 HTTP 層之結構"""
+    request_id: str
+    session_id: str
+    revision: int = Field(..., ge=0)
+    status: AgentStatus
+    message: str
+    questions: List[Question] = Field(default_factory=list)
+    plan: Optional[Plan] = None
+    location: Optional[LocationRecord] = None
+    error: Optional[Error] = None
 
-    status: AgentStatus = Field(..., description="Agent 決策語意狀態")
-    message: str = Field(..., description="準備呈現給使用者的對話文字")
-    suggested_actions: Optional[List[str]] = Field(
-        default=None, description="建議的快捷選項"
-    )
-    plan: Optional[Plan] = Field(
-        default=None, description="生成的計畫（若 status 為 PLAN_READY）"
-    )
-    tool_calls_count: int = Field(default=0, description="本次推論呼叫工具之次數統計")
+    @model_validator(mode="after")
+    def check_status_contract(self) -> "AgentResult":
+        if self.status == AgentStatus.FAILED:
+            if self.error is None:
+                raise ValueError("status 為 failed 時，error 不可為 null")
+        else:
+            if self.error is not None:
+                raise ValueError("非 failed 狀態時，error 必須為 null")
+
+        if self.status == AgentStatus.NEEDS_INPUT and not self.questions:
+            raise ValueError("status 為 needs_input 時，questions 至少須包含一題")
+        if self.status == AgentStatus.PLAN_READY and self.plan is None:
+            raise ValueError("status 為 plan_ready 時，必須提供已保存的 plan")
+        return self
+
+
+class SessionState(BaseModel):
+    session_id: str
+    revision: int = Field(default=0, ge=0)
+    images: List[ImageRef] = Field(default_factory=list)
+    scene: Optional[SceneAnalysis] = None
+    requirements: Requirements = Field(default_factory=Requirements)
+    current_plan: Optional[Plan] = None
+    locations: List[LocationRecord] = Field(default_factory=list)
+    pending_questions: List[Question] = Field(default_factory=list)
+    messages: List[Message] = Field(default_factory=list)
+
+
+# ==============================================================================
+# 4. Agent 工具專用輔助模型 (BACKEND_API.md 第 5 節)
+# ==============================================================================
+
+
+class RegionUpdate(BaseModel):
+    region_id: str
+    availability: Optional[RegionAvailability] = None
+    dimensions: Optional[Dimensions] = None
+
+    @model_validator(mode="after")
+    def check_at_least_one_field(self) -> "RegionUpdate":
+        if self.availability is None and self.dimensions is None:
+            raise ValueError("RegionUpdate 至少須提供 availability 或 dimensions 其中之一")
+        return self
+
+
+class Violation(BaseModel):
+    code: str
+    message: str
+    related_ids: List[str] = Field(default_factory=list)
+
+
+class PlanValidationData(BaseModel):
+    valid: bool
+    violations: List[Violation] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    validated_revision: int = Field(..., ge=0)
+
+
+class LocationLookupData(BaseModel):
+    item_id: str
+    location: Optional[LocationRecord] = None
+    suggested_region_id: Optional[str] = None
+
+
+# ==============================================================================
+# 5. 前端 HTTP API 請求與回應模型 (FRONTEND_API.md 第 3、5 節)
+# ==============================================================================
+
+
+class HttpErrorResponse(BaseModel):
+    """非 2xx HTTP 回應的固定錯誤格式"""
+
+    request_id: str
+    error: Error
+
+
+class CreateSessionRequest(BaseModel):
+    request_id: str
+
+
+class CreateSessionResponse(BaseModel):
+    request_id: str
+    session_id: str
+    revision: int = Field(default=0, ge=0)
+
+
+class UploadImagesResponse(BaseModel):
+    request_id: str
+    session_id: str
+    revision: int = Field(..., ge=0)
+    images: List[ImageRef]
+
+
+class AnalyzeSceneRequest(BaseModel):
+    request_id: str
+    expected_revision: int = Field(..., ge=0)
+    image_ids: List[str] = Field(..., min_length=1)
+    user_message: str
+
+
+class ConfirmSceneRequest(BaseModel):
+    request_id: str
+    expected_revision: int = Field(..., ge=0)
+    scene: SceneAnalysis
+
+
+class SceneResponse(BaseModel):
+    """POST /analysis 與 PUT /scene/confirmation 的成功回傳格式"""
+
+    request_id: str
+    session_id: str
+    revision: int = Field(..., ge=0)
+    scene: SceneAnalysis
+
+
+class CreatePlanRequest(BaseModel):
+    request_id: str
+    expected_revision: int = Field(..., ge=0)
+    user_message: str
+
+
+class SendMessageRequest(BaseModel):
+    request_id: str
+    expected_revision: int = Field(..., ge=0)
+    user_message: str
+
+
+class CompleteStepRequest(BaseModel):
+    request_id: str
+    expected_revision: int = Field(..., ge=0)
+    plan_version: int = Field(..., ge=1)
+
+
+class CompleteStepResponse(BaseModel):
+    request_id: str
+    session_id: str
+    revision: int = Field(..., ge=0)
+    step: PlanStep
+    locations: List[LocationRecord]
+
+
+class ConfirmLocationRequest(BaseModel):
+    request_id: str
+    expected_revision: int = Field(..., ge=0)
+    item_id: str
+    region_id: str
+
+
+class ConfirmLocationResponse(BaseModel):
+    request_id: str
+    session_id: str
+    revision: int = Field(..., ge=0)
+    location: LocationRecord
+
+
+class ItemLocationResponse(BaseModel):
+    """GET /sessions/{sid}/items/{item_id}/location 的成功回傳格式"""
+
+    session_id: str
+    revision: int = Field(..., ge=0)
+    item_id: str
+    location: Optional[LocationRecord] = None
+    suggested_region_id: Optional[str] = None
