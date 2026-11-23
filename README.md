@@ -66,7 +66,7 @@ python -m venv .venv
 
 SDK 參考：[Google Gen AI Python SDK](https://googleapis.github.io/python-genai/)。
 
-## 第三關：辨識、修正及確認
+## 第三步：辨識、修正及確認
 
 依 [Gemini 結構化輸出文件](https://ai.google.dev/gemini-api/docs/structured-output)，使用 JSON Schema 要求結構化回應，再以 Pydantic 驗證欄位、唯一 ID 與引用。模型只提供暫時 ID；程式透過可注入的 allocator 配發正式物品、區域與問題 ID。
 
