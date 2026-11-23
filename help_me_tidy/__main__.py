@@ -13,6 +13,7 @@ from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field, ValidationError
 
 from .analysis import analyze_scene
+from .planning import create_plan, parse_requirements
 from .scene import SceneAnalysis, allocate_id, confirm_scene
 
 
@@ -47,7 +48,27 @@ def main() -> int:
     confirm.add_argument("original", type=Path)
     confirm.add_argument("edited", type=Path)
     confirm.add_argument("--output", type=Path)
+    plan = commands.add_parser("plan", help="離線解析需求並建立第一版收納計畫")
+    plan.add_argument("scene", type=Path)
+    plan.add_argument("--message", required=True)
+    plan.add_argument("--output", type=Path, help="保存本地結果至新檔，不覆寫")
     args = parser.parse_args()
+    if args.command == "plan":
+        try:
+            scene = read_scene(args.scene)
+            requirements = parse_requirements(scene, args.message)
+            result = create_plan(scene, requirements)
+            emit_result({"requirements": requirements.model_dump(mode="json"),
+                         "result": result.model_dump(mode="json")}, args.output)
+            return 0
+        except ValidationError as exc:
+            print("規劃資料驗證失敗：" + json.dumps([
+                {"path": list(e["loc"]), "type": e["type"]}
+                for e in exc.errors()
+            ], ensure_ascii=False), file=sys.stderr)
+        except (OSError, ValueError, AttributeError) as exc:
+            print(f"規劃失敗（{type(exc).__name__}）：請檢查場景 JSON、需求、ID 與輸出檔是否已存在。", file=sys.stderr)
+        return 2
     if args.command == "confirm":
         try:
             scene = confirm_scene(read_scene(args.original), read_scene(args.edited))
