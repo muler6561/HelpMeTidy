@@ -1,0 +1,95 @@
+{
+  "requirements": {
+    "source_text": "計算機每天用，不要放進抽屜，桌面左邊要留空",
+    "entries": [
+      {
+        "requirement_id": "requirement_07b96169fcab4d3f82b01db3eee59f22",
+        "kind": "usage",
+        "rule": "usage_frequency",
+        "item_ids": [
+          "item_calculator"
+        ],
+        "region_ids": [],
+        "value": "daily",
+        "source_text": "計算機每天用"
+      },
+      {
+        "requirement_id": "requirement_e561c751dca54a37ae5686f8b251b1af",
+        "kind": "hard_constraint",
+        "rule": "forbidden_region",
+        "item_ids": [
+          "item_calculator"
+        ],
+        "region_ids": [
+          "region_drawer"
+        ],
+        "value": null,
+        "source_text": "不要放進抽屜"
+      },
+      {
+        "requirement_id": "requirement_7653f7d472e94d0e859ad5859251d92a",
+        "kind": "hard_constraint",
+        "rule": "keep_region_empty",
+        "item_ids": [],
+        "region_ids": [
+          "region_left"
+        ],
+        "value": null,
+        "source_text": "桌面左邊要留空"
+      }
+    ],
+    "questions": []
+  },
+  "result": {
+    "status": "plan_ready",
+    "message": "第一版計畫已通過本地檢查，尚未保存至 session；容量仍待確認。",
+    "questions": [],
+    "plan": {
+      "plan_id": "plan_2530ae8108604546a17953c094475346",
+      "plan_version": 1,
+      "based_on_revision": 0,
+      "change_reason": "依已確認現況與需求建立第一版收納計畫。",
+      "assignments": [
+        {
+          "item_id": "item_calculator",
+          "region_id": "region_right",
+          "reason": "符合所有硬限制，依位置偏好優先，再優先沿用觀察區域以減少搬動。使用頻率：daily；整理時請確認取用方便。",
+          "fit_status": "unknown"
+        },
+        {
+          "item_id": "item_book",
+          "region_id": "region_right",
+          "reason": "符合所有硬限制，依位置偏好優先，再優先沿用觀察區域以減少搬動。",
+          "fit_status": "unknown"
+        }
+      ],
+      "steps": [
+        {
+          "step_id": "step_baeb0c7b08684bda88460a7fb7c38943",
+          "instruction": "先確認「桌面右側」有足夠空間；若可容納，將「計算機」整理至該區域；若放不下請回報。",
+          "item_ids": [
+            "item_calculator"
+          ],
+          "target_region_id": "region_right",
+          "status": "pending",
+          "completed_at": null
+        },
+        {
+          "step_id": "step_7679cd095bab49398506d062741b1c33",
+          "instruction": "先確認「桌面右側」有足夠空間；若可容納，將「課本」整理至該區域；若放不下請回報。",
+          "item_ids": [
+            "item_book"
+          ],
+          "target_region_id": "region_right",
+          "status": "pending",
+          "completed_at": null
+        }
+      ],
+      "pending_confirmations": [
+        "請確認「計算機」在「桌面右側」的可用容量與實際尺寸；目前不能確定放得下。",
+        "請確認「課本」在「桌面右側」的可用容量與實際尺寸；目前不能確定放得下。",
+        "請確認抽屜內部可用狀態及容量。"
+      ]
+    }
+  }
+}

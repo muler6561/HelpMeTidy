@@ -1,0 +1,14 @@
+{
+  "image_ids": ["img_demo"],
+  "items": [{"item_id": "item_demo", "name": "疑似計算機", "observed_region_id": "region_desk", "observation": "桌面右側部分遮擋的物品，種類待確認", "needs_confirmation": true}],
+  "regions": [
+    {"region_id": "region_desk", "name": "桌面", "availability": "available", "dimensions": {"width_cm": null, "depth_cm": null, "height_cm": null}, "needs_confirmation": false},
+    {"region_id": "region_drawer", "name": "封閉抽屜", "availability": "unknown", "dimensions": {"width_cm": null, "depth_cm": null, "height_cm": null}, "needs_confirmation": true}
+  ],
+  "relations": [{"item_id": "item_demo", "region_id": "region_desk", "relation": "on"}],
+  "questions": [
+    {"question_id": "q_item", "text": "桌面右側被遮擋的是計算機嗎？", "related_ids": ["item_demo"]},
+    {"question_id": "q_drawer", "text": "抽屜內部不可見，請確認是否可用及容量。", "related_ids": ["region_drawer"]}
+  ],
+  "confirmed": false
+}

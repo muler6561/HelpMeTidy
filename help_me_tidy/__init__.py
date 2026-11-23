@@ -1,1 +1,1 @@
-"""Help Me Tidy: step 2 environment and image API smoke test."""
+"""Help Me Tidy: structured scene analysis and explicit confirmation."""
