@@ -1,0 +1,18 @@
+{
+  "image_ids": ["img_planning_demo"],
+  "items": [
+    {"item_id": "item_calculator", "name": "計算機", "observed_region_id": "region_left", "observation": "桌面左側的計算機", "needs_confirmation": false},
+    {"item_id": "item_book", "name": "課本", "observed_region_id": "region_left", "observation": "桌面左側的課本", "needs_confirmation": false}
+  ],
+  "regions": [
+    {"region_id": "region_left", "name": "桌面左側", "availability": "available", "dimensions": {"width_cm": null, "depth_cm": null, "height_cm": null}, "needs_confirmation": false},
+    {"region_id": "region_right", "name": "桌面右側", "availability": "available", "dimensions": {"width_cm": null, "depth_cm": null, "height_cm": null}, "needs_confirmation": false},
+    {"region_id": "region_drawer", "name": "第一層抽屜", "availability": "unknown", "dimensions": {"width_cm": null, "depth_cm": null, "height_cm": null}, "needs_confirmation": true}
+  ],
+  "relations": [
+    {"item_id": "item_calculator", "region_id": "region_left", "relation": "on"},
+    {"item_id": "item_book", "region_id": "region_left", "relation": "on"}
+  ],
+  "questions": [{"question_id": "q_drawer", "text": "請確認抽屜內部可用狀態及容量。", "related_ids": ["region_drawer"]}],
+  "confirmed": true
+}
